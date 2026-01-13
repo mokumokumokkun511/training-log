@@ -5,10 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Training Log</title>
 
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -42,8 +38,16 @@ h2 {
   margin-bottom: 8px;
 }
 
+label {
+  display: block;
+  font-size: 0.9em;
+  color: #555;
+  margin-bottom: 4px;
+}
+
 input, select, textarea, button {
   width: 100%;
+  height: 44px;
   padding: 10px;
   margin-bottom: 8px;
   border-radius: 8px;
@@ -53,10 +57,9 @@ input, select, textarea, button {
 }
 
 input[type="date"] {
-  width: 100%;
-  box-sizing: border-box;
-  -webkit-appearance: none;
   appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
 }
 
 button {
@@ -65,14 +68,12 @@ button {
   border: none;
 }
 
-button.danger { background: #ff3b30; }
-button.safe { background: #34c759; }
+button.danger {
+  background: #ff3b30;
+}
 
-textarea { height: 80px; }
-
-.small {
-  font-size: 0.85em;
-  color: #666;
+textarea {
+  height: 80px;
 }
 
 canvas {
@@ -84,15 +85,42 @@ canvas {
 
 <body>
 <div class="app">
-<h1>🏋️ Training Log</h1>
+  <h1>🏋️ Training Log</h1>
 
-<!-- 入力などは省略（前と同じ） -->
-<!-- ここはそのまま使ってOK -->
+  <div class="card">
+    <h2>入力</h2>
 
-<div class="card"><canvas id="weightChart"></canvas></div>
-<div class="card"><canvas id="volumeChart"></canvas></div>
-<div class="card"><canvas id="maxChart"></canvas></div>
+    <label for="date">日付</label>
+    <input id="date" type="date" />
 
+    <input id="weight" type="number" placeholder="重量 (kg)" />
+    <input id="reps" type="number" placeholder="回数" />
+    <input id="sets" type="number" placeholder="セット" />
+    <input id="max" type="number" placeholder="MAX測定 (kg)" />
+
+    <button id="saveBtn">保存</button>
+  </div>
+
+  <div class="card">
+    <h2>日付指定で削除</h2>
+    <select id="deleteDate"></select>
+    <button class="danger" id="deleteBtn">削除</button>
+  </div>
+
+  <div class="card">
+    <h2>📈 重量</h2>
+    <canvas id="weightChart"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>📈 ボリューム</h2>
+    <canvas id="volumeChart"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>📈 MAX</h2>
+    <canvas id="maxChart"></canvas>
+  </div>
 </div>
 
 <script>
@@ -101,63 +129,129 @@ let data = JSON.parse(localStorage.getItem(DATA_KEY)) || [];
 
 let weightChart, volumeChart, maxChart;
 
-// 線形回帰
-function trend(values) {
-  const n = values.length;
-  if (n < 2) return [];
-  let sx=0, sy=0, sxy=0, sx2=0;
-  values.forEach((y,x)=>{
-    sx+=x; sy+=y; sxy+=x*y; sx2+=x*x;
+const dateEl = document.getElementById("date");
+const weightEl = document.getElementById("weight");
+const repsEl = document.getElementById("reps");
+const setsEl = document.getElementById("sets");
+const maxEl = document.getElementById("max");
+
+document.getElementById("saveBtn").onclick = saveData;
+document.getElementById("deleteBtn").onclick = deleteByDate;
+
+// 今日をデフォルト日付に
+dateEl.value = new Date().toISOString().slice(0,10);
+
+function saveData() {
+  const date = dateEl.value;
+  const w = +weightEl.value;
+  const r = +repsEl.value;
+  const s = +setsEl.value;
+  const m = +maxEl.value;
+  if (!date || !w || !r || !s || !m) return;
+
+  const index = data.findIndex(d => d.date === date);
+
+  if (index >= 0) {
+    // 既存日付 → 合算
+    const old = data[index];
+
+    const totalReps = old.r + r;
+    const totalSets = old.s + s;
+
+    const avgWeight =
+      ((old.w * old.r * old.s) + (w * r * s)) /
+      (old.r * old.s + r * s);
+
+    const maxValue = Math.max(old.m, m);
+
+    const volume = avgWeight * totalReps * totalSets;
+
+    data[index] = {
+      date,
+      w: Math.round(avgWeight * 10) / 10,
+      r: totalReps,
+      s: totalSets,
+      m: maxValue,
+      volume
+    };
+  } else {
+    // 新規日付
+    const volume = w * r * s;
+    data.push({ date, w, r, s, m, volume });
+  }
+
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  clearInputs();
+  refresh();
+}
+
+function clearInputs() {
+  weightEl.value = repsEl.value = setsEl.value = maxEl.value = "";
+  weightEl.focus();
+}
+
+function deleteByDate() {
+  const d = document.getElementById("deleteDate").value;
+  data = data.filter(x => x.date !== d);
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  refresh();
+}
+
+function refresh() {
+  updateDeleteList();
+  drawCharts();
+}
+
+function updateDeleteList() {
+  const sel = document.getElementById("deleteDate");
+  sel.innerHTML = "";
+  [...new Set(data.map(d => d.date))].forEach(d => {
+    const o = document.createElement("option");
+    o.value = o.textContent = d;
+    sel.appendChild(o);
   });
-  const a = (n*sxy - sx*sy)/(n*sx2 - sx*sx);
-  const b = (sy - a*sx)/n;
-  return values.map((_,x)=>a*x+b);
 }
 
 function drawCharts() {
-  const labels = data.map(d=>d.date);
-
   if (weightChart) weightChart.destroy();
   if (volumeChart) volumeChart.destroy();
   if (maxChart) maxChart.destroy();
 
-  // 重量
-  weightChart = new Chart(document.getElementById("weightChart"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label:"重量(kg)", data:data.map(d=>d.w), borderColor:"blue" },
-        { label:"重量トレンド", data:trend(data.map(d=>d.w)), borderDash:[5,5], pointRadius:0, borderColor:"blue" }
-      ]
-    }
-  });
+  const labels = data.map(d => d.date);
 
-  // ボリューム
-  volumeChart = new Chart(document.getElementById("volumeChart"), {
-    data: {
-      labels,
-      datasets: [
-        { type:"bar", label:"ボリューム", data:data.map(d=>d.volume), backgroundColor:"rgba(0,200,0,0.4)" },
-        { type:"line", label:"ボリュームトレンド", data:trend(data.map(d=>d.volume)), borderColor:"green", pointRadius:0 }
-      ]
-    }
-  });
+  weightChart = new Chart(
+    document.getElementById("weightChart"),
+    lineConfig(labels, data.map(d => d.w), "重量 (kg)", "blue")
+  );
 
-  // MAX
-  maxChart = new Chart(document.getElementById("maxChart"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label:"MAX(kg)", data:data.map(d=>d.m), borderColor:"red" },
-        { label:"MAXトレンド", data:trend(data.map(d=>d.m)), borderDash:[5,5], pointRadius:0, borderColor:"red" }
-      ]
-    }
-  });
+  volumeChart = new Chart(
+    document.getElementById("volumeChart"),
+    lineConfig(labels, data.map(d => d.volume), "ボリューム", "green")
+  );
+
+  maxChart = new Chart(
+    document.getElementById("maxChart"),
+    lineConfig(labels, data.map(d => d.m), "MAX (kg)", "red")
+  );
 }
 
-drawCharts();
+function lineConfig(labels, values, label, color) {
+  return {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data: values,
+        borderColor: color,
+        tension: 0.25,
+        fill: false
+      }]
+    }
+  };
+}
+
+refresh();
 </script>
 </body>
 </html>
