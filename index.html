@@ -1,250 +1,292 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Training Log</title>
 
+<!-- Chart.js CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-* { box-sizing: border-box; }
-
 body {
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   margin: 0;
-  padding: 12px;
   background: #f2f2f7;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-h1, h2 {
-  margin: 12px 0 6px;
-}
-
-.container {
+.app {
   max-width: 480px;
-  margin: 0 auto;
+  margin: auto;
+  padding: 12px;
 }
 
-input, button {
+h1 {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+h2 {
+  font-size: 1.1em;
+  margin-bottom: 8px;
+}
+
+input, select, textarea, button {
   width: 100%;
   padding: 10px;
-  margin: 4px 0;
-  font-size: 16px;
+  margin-bottom: 8px;
   border-radius: 8px;
-}
-
-input {
   border: 1px solid #ccc;
-  background: #fff;
+  font-size: 16px;
+  box-sizing: border-box;
 }
 
 button {
-  border: none;
   background: #007aff;
   color: #fff;
-  font-weight: 600;
+  border: none;
+}
+
+button.danger { background: #ff3b30; }
+button.safe { background: #34c759; }
+
+textarea { height: 80px; }
+
+.small {
+  font-size: 0.85em;
+  color: #666;
 }
 
 canvas {
-  background: #fff;
-  border-radius: 8px;
-  margin-top: 12px;
-}
-
-.summary {
-  background: #fff;
-  border-radius: 8px;
-  padding: 10px;
-  margin-top: 10px;
-  font-size: 14px;
-}
-
-small {
-  color: #666;
+  width: 100% !important;
+  height: 320px !important;
 }
 </style>
 </head>
 
 <body>
-<div class="container">
+<div class="app">
+  <h1>🏋️ Training Log</h1>
 
-<h1>🏋️ トレーニング記録</h1>
+  <div class="card">
+    <h2>入力</h2>
+    <input id="date" type="date" />
+    <input id="weight" type="number" placeholder="重量 (kg)" />
+    <input id="reps" type="number" placeholder="回数" />
+    <input id="sets" type="number" placeholder="セット" />
+    <input id="max" type="number" placeholder="MAX測定 (kg)" />
+    <button id="saveBtn">保存</button>
+  </div>
 
-<input type="date" id="date">
+  <div class="card">
+    <h2>日付指定で削除</h2>
+    <select id="deleteDate"></select>
+    <button class="danger" id="deleteBtn">削除</button>
+  </div>
 
-<input type="number" id="weight" placeholder="重量"
-  onkeydown="moveNext(event,'reps')">
+  <div class="card">
+    <h2>自動バックアップ</h2>
+    <p class="small">
+      通常保存：localStorage.training_data<br>
+      バックアップ：localStorage.training_backup
+    </p>
+    <button class="safe" id="restoreBtn">バックアップから復元</button>
+  </div>
 
-<input type="number" id="reps" placeholder="回数"
-  onkeydown="moveNext(event,'sets')">
+  <div class="card">
+    <h2>📅 週サマリー</h2>
+    <div id="weekly"></div>
+  </div>
 
-<input type="number" id="sets" placeholder="セット"
-  onkeydown="moveNext(event,'max')">
+  <div class="card">
+    <h2>🗓 月サマリー</h2>
+    <div id="monthly"></div>
+  </div>
 
-<input type="number" id="max" placeholder="マックス"
-  onkeydown="moveNext(event,'addBtn')">
+  <div class="card">
+    <h2>📈 成長指数</h2>
+    <div id="growth"></div>
+  </div>
 
-<button id="addBtn" onclick="addData()">追加</button>
+  <div class="card">
+    <canvas id="chart"></canvas>
+  </div>
 
-<h2>📊 推移グラフ</h2>
-<canvas id="chart"></canvas>
-
-<div class="summary" id="weekSummary"></div>
-<div class="summary" id="monthSummary"></div>
-
-<button onclick="exportCSV()">CSV書き出し（Excel用）</button>
-<input type="file" accept=".csv" onchange="importCSV(this.files[0])">
-
-<small>
-保存先：この端末のブラウザ（localStorage）<br>
-※ Safariのデータ削除で消えます
-</small>
-
+  <div class="card">
+    <button id="exportBtn">Excel用CSVをコピー</button>
+    <textarea id="importArea" placeholder="ExcelのCSVをここに貼る"></textarea>
+    <button id="importBtn">CSVを読み込む</button>
+  </div>
 </div>
 
 <script>
-let data = JSON.parse(localStorage.getItem("trainingData") || "[]");
+const DATA_KEY = "training_data";
+const BACKUP_KEY = "training_backup";
+
+let data = JSON.parse(localStorage.getItem(DATA_KEY)) || [];
 let chart;
 
-function save() {
-  localStorage.setItem("trainingData", JSON.stringify(data));
-}
+// Elements
+const dateEl = document.getElementById("date");
+const weightEl = document.getElementById("weight");
+const repsEl = document.getElementById("reps");
+const setsEl = document.getElementById("sets");
+const maxEl = document.getElementById("max");
 
-function moveNext(e, id) {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    document.getElementById(id).focus();
-  }
-}
-
-function addData() {
-  if (!date.value) {
-    alert("日付を入力してください");
-    return;
-  }
-  data.push({
-    date: date.value,
-    weight: +weight.value,
-    reps: +reps.value,
-    sets: +sets.value,
-    max: +max.value
-  });
-  save();
-  drawAll();
-}
-
-function trend(values) {
-  const n = values.length;
-  if (n < 2) return values;
-
-  const x = values.map((_, i) => i);
-  const mx = x.reduce((a,b)=>a+b,0)/n;
-  const my = values.reduce((a,b)=>a+b,0)/n;
-
-  const a = x.reduce((s,i)=>s+(i-mx)*(values[i]-my),0) /
-            x.reduce((s,i)=>s+(i-mx)*(i-mx),0);
-  const b = my - a*mx;
-
-  return x.map(i => a*i + b);
-}
-
-function drawAll() {
-  const labels = data.map(d => d.date);
-  const weights = data.map(d => d.weight);
-  const volumes = data.map(d => d.weight*d.reps*d.sets);
-  const maxes = data.map(d => d.max);
-
-  if (chart) chart.destroy();
-
-  chart = new Chart(document.getElementById("chart"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label:"重量", data:weights, borderWidth:2 },
-        { label:"重量トレンド", data:trend(weights), borderDash:[5,5], pointRadius:0 },
-
-        { label:"ボリューム", data:volumes, borderWidth:2 },
-        { label:"ボリュームトレンド", data:trend(volumes), borderDash:[5,5], pointRadius:0 },
-
-        { label:"マックス", data:maxes, borderWidth:2 },
-        { label:"マックストレンド", data:trend(maxes), borderDash:[5,5], pointRadius:0 }
-      ]
+// Enterキー移動
+[weightEl, repsEl, setsEl, maxEl].forEach((el, i, arr) => {
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      arr[i + 1] ? arr[i + 1].focus() : saveData();
     }
   });
+});
 
+document.getElementById("saveBtn").onclick = saveData;
+document.getElementById("deleteBtn").onclick = deleteByDate;
+document.getElementById("restoreBtn").onclick = restoreBackup;
+document.getElementById("exportBtn").onclick = exportCSV;
+document.getElementById("importBtn").onclick = importCSV;
+
+// 保存
+function saveData() {
+  const date = dateEl.value || new Date().toISOString().slice(0,10);
+  const w = +weightEl.value;
+  const r = +repsEl.value;
+  const s = +setsEl.value;
+  const m = +maxEl.value;
+  if (!w || !r || !s || !m) return;
+
+  const volume = w * r * s;
+  data.push({ date, w, r, s, m, volume });
+
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
+
+  clearInputs();
+  refresh();
+}
+
+function clearInputs() {
+  weightEl.value = repsEl.value = setsEl.value = maxEl.value = "";
+  weightEl.focus();
+}
+
+// 削除
+function deleteByDate() {
+  const d = document.getElementById("deleteDate").value;
+  data = data.filter(x => x.date !== d);
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  refresh();
+}
+
+// 復元
+function restoreBackup() {
+  const backup = JSON.parse(localStorage.getItem(BACKUP_KEY));
+  if (!backup) return alert("バックアップなし");
+  data = backup;
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  refresh();
+}
+
+// CSV出力
+function exportCSV() {
+  let csv = "date,weight,reps,sets,max,volume\n";
+  data.forEach(d => {
+    csv += `${d.date},${d.w},${d.r},${d.s},${d.m},${d.volume}\n`;
+  });
+  navigator.clipboard.writeText(csv);
+  alert("CSVをコピーしました");
+}
+
+// CSV入力
+function importCSV() {
+  const text = document.getElementById("importArea").value.trim();
+  if (!text) return;
+  const lines = text.split("\n").slice(1);
+  data = lines.map(l => {
+    const [date,w,r,s,m,v] = l.split(",");
+    return { date, w:+w, r:+r, s:+s, m:+m, volume:+v };
+  });
+  localStorage.setItem(DATA_KEY, JSON.stringify(data));
+  refresh();
+}
+
+// 線形回帰
+function trend(values) {
+  const n = values.length;
+  if (n < 2) return [];
+  let sx=0, sy=0, sxy=0, sx2=0;
+  values.forEach((y,x)=>{
+    sx+=x; sy+=y; sxy+=x*y; sx2+=x*x;
+  });
+  const a = (n*sxy - sx*sy)/(n*sx2 - sx*sx);
+  const b = (sy - a*sx)/n;
+  return values.map((_,x)=>a*x+b);
+}
+
+function refresh() {
+  updateDeleteList();
   updateSummary();
+  drawChart();
+}
+
+function updateDeleteList() {
+  const sel = document.getElementById("deleteDate");
+  sel.innerHTML = "";
+  [...new Set(data.map(d=>d.date))].forEach(d=>{
+    const o=document.createElement("option");
+    o.value=o.textContent=d;
+    sel.appendChild(o);
+  });
 }
 
 function updateSummary() {
-  if (data.length === 0) return;
+  const last7 = data.slice(-7);
+  const avg = arr => arr.reduce((a,b)=>a+b,0)/(arr.length||1);
 
-  const now = new Date();
-  const weekAgo = new Date(now);
-  weekAgo.setDate(now.getDate()-7);
+  document.getElementById("weekly").textContent =
+    `平均重量 ${avg(last7.map(d=>d.w)).toFixed(1)}kg / 合計ボリューム ${last7.reduce((a,b)=>a+b.volume,0)}`;
 
-  const month = now.toISOString().slice(0,7);
+  document.getElementById("monthly").textContent =
+    `MAX最高 ${Math.max(...data.map(d=>d.m),0)}kg`;
 
-  const week = data.filter(d => new Date(d.date) >= weekAgo);
-  const monthData = data.filter(d => d.date.startsWith(month));
-
-  function avg(arr, key) {
-    if (arr.length === 0) return 0;
-    return (arr.reduce((s,d)=>s+d[key],0)/arr.length).toFixed(1);
+  if (data.length>=14) {
+    const first = avg(data.slice(0,7).map(d=>d.volume));
+    const last = avg(data.slice(-7).map(d=>d.volume));
+    document.getElementById("growth").textContent =
+      `成長指数 ${(last/first).toFixed(2)}`;
   }
-
-  weekSummary.innerHTML = `
-<b>📅 週サマリー</b><br>
-平均重量: ${avg(week,'weight')}<br>
-平均マックス: ${avg(week,'max')}
-`;
-
-  monthSummary.innerHTML = `
-<b>📆 月サマリー</b><br>
-平均重量: ${avg(monthData,'weight')}<br>
-平均マックス: ${avg(monthData,'max')}
-`;
 }
 
-function exportCSV() {
-  let csv = "date,weight,reps,sets,max\n";
-  data.forEach(d=>{
-    csv += `${d.date},${d.weight},${d.reps},${d.sets},${d.max}\n`;
+function drawChart() {
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels: data.map(d=>d.date),
+      datasets: [
+        { label:"重量", data:data.map(d=>d.w), borderColor:"blue" },
+        { label:"重量トレンド", data:trend(data.map(d=>d.w)), borderDash:[5,5], pointRadius:0, borderColor:"blue" },
+        { label:"ボリューム", data:data.map(d=>d.volume), borderColor:"green" },
+        { label:"ボリュームトレンド", data:trend(data.map(d=>d.volume)), borderDash:[5,5], pointRadius:0, borderColor:"green" },
+        { label:"MAX", data:data.map(d=>d.m), borderColor:"red" },
+        { label:"MAXトレンド", data:trend(data.map(d=>d.m)), borderDash:[5,5], pointRadius:0, borderColor:"red" }
+      ]
+    }
   });
-
-  const blob = new Blob([csv], { type:"text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "training-log.csv";
-  a.click();
 }
 
-function importCSV(file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    const lines = e.target.result.split("\n").slice(1);
-    data = [];
-    lines.forEach(l=>{
-      if(!l.trim()) return;
-      const [date,w,r,s,m] = l.split(",");
-      data.push({
-        date,
-        weight:+w,
-        reps:+r,
-        sets:+s,
-        max:+m
-      });
-    });
-    save();
-    drawAll();
-  };
-  reader.readAsText(file);
-}
-
-drawAll();
+refresh();
 </script>
-
 </body>
 </html>
