@@ -63,6 +63,22 @@ canvas {
 small {
   color: #666;
 }
+/* ===== 入力欄サイズ統一（特に日付） ===== */
+input,
+select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  padding: 6px 10px;
+  font-size: 16px;
+}
+
+/* Safari対策：dateだけ微調整 */
+input[type="date"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
+}
 </style>
 </head>
 
