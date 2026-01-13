@@ -1,35 +1,257 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Training Log</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #f2f2f7;
-      margin: 0;
-      padding: 20px;
-    }
-    .card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-    }
-    h1 {
-      text-align: center;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Training Log</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f2f2f7;
+    margin: 0;
+    padding: 16px;
+  }
+
+  h1 {
+    text-align: center;
+  }
+
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  label {
+    display: block;
+    font-size: 14px;
+    margin-top: 8px;
+  }
+
+  input, select, textarea, button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 4px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 16px;
+    box-sizing: border-box;
+  }
+
+  button {
+    border: none;
+    color: white;
+    font-weight: bold;
+    margin-top: 12px;
+  }
+
+  .save { background: #007aff; }
+  .delete { background: #ff3b30; }
+  .restore { background: #34c759; }
+
+  canvas {
+    max-width: 100%;
+  }
+
+  small {
+    color: #666;
+    font-size: 12px;
+  }
+</style>
 </head>
+
 <body>
 
 <h1>🏋️ Training Log</h1>
 
 <div class="card">
-  <p>ここにあなたのトレーニングログアプリを育てていきます。</p>
+  <h3>入力</h3>
+
+  <label>日付</label>
+  <input type="date" id="date" />
+
+  <label>重量 (kg)</label>
+  <input type="number" id="weight" />
+
+  <label>回数</label>
+  <input type="number" id="reps" />
+
+  <label>セット</label>
+  <input type="number" id="sets" />
+
+  <label>MAX測定 (kg)</label>
+  <input type="number" id="max" />
+
+  <button class="save" onclick="saveData()">保存</button>
 </div>
+
+<div class="card">
+  <h3>日付指定で削除</h3>
+  <select id="deleteDate"></select>
+  <button class="delete" onclick="deleteByDate()">削除</button>
+</div>
+
+<div class="card">
+  <h3>自動バックアップ</h3>
+  <small>
+    通常保存：localStorage.training_data<br>
+    バックアップ：localStorage.training_backup
+  </small>
+  <button class="restore" onclick="restoreBackup()">バックアップから復元</button>
+</div>
+
+<div class="card">
+  <h3>📅 週サマリー</h3>
+  <div id="weekly"></div>
+</div>
+
+<div class="card">
+  <h3>📆 月サマリー</h3>
+  <div id="monthly"></div>
+</div>
+
+<div class="card">
+  <h3>📈 成長指数</h3>
+  <div id="growth"></div>
+</div>
+
+<div class="card">
+  <canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+  <button class="save" onclick="copyCSV()">Excel用CSVをコピー</button>
+  <textarea id="csvInput" placeholder="ExcelのCSVをここに貼る"></textarea>
+  <button class="save" onclick="importCSV()">CSVを読み込む</button>
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem("training_data") || "[]");
+let backup = JSON.parse(localStorage.getItem("training_backup") || "null");
+
+function saveData() {
+  const entry = {
+    date: date.value,
+    weight: +weight.value,
+    reps: +reps.value,
+    sets: +sets.value,
+    max: +max.value
+  };
+
+  if (!entry.date) return alert("日付を入力してください");
+
+  backup = JSON.parse(JSON.stringify(data));
+  localStorage.setItem("training_backup", JSON.stringify(backup));
+
+  data.push(entry);
+  localStorage.setItem("training_data", JSON.stringify(data));
+
+  renderAll();
+}
+
+function deleteByDate() {
+  const d = deleteDate.value;
+  data = data.filter(e => e.date !== d);
+  localStorage.setItem("training_data", JSON.stringify(data));
+  renderAll();
+}
+
+function restoreBackup() {
+  if (!backup) return alert("バックアップがありません");
+  data = backup;
+  localStorage.setItem("training_data", JSON.stringify(data));
+  renderAll();
+}
+
+function renderAll() {
+  updateDeleteList();
+  renderSummary();
+  renderChart();
+}
+
+function updateDeleteList() {
+  deleteDate.innerHTML = "";
+  [...new Set(data.map(e => e.date))].forEach(d => {
+    const o = document.createElement("option");
+    o.value = d;
+    o.textContent = d;
+    deleteDate.appendChild(o);
+  });
+}
+
+function renderSummary() {
+  if (data.length === 0) return;
+
+  const totalVolume = data.reduce((s,e)=>s+e.weight*e.reps*e.sets,0);
+  const avgWeight = (data.reduce((s,e)=>s+e.weight,0)/data.length).toFixed(1);
+  weekly.innerText = `平均重量 ${avgWeight}kg / 合計ボリューム ${totalVolume}`;
+
+  const maxMax = Math.max(...data.map(e=>e.max));
+  monthly.innerText = `MAX最高 ${maxMax}kg`;
+
+  growth.innerText = `成長指数 ${(maxMax / data[0].max).toFixed(2)}`;
+}
+
+function trend(values) {
+  const n = values.length;
+  let sx=0, sy=0, sxy=0, sx2=0;
+  values.forEach((y,x)=>{
+    sx+=x; sy+=y; sxy+=x*y; sx2+=x*x;
+  });
+  const a=(n*sxy-sx*sy)/(n*sx2-sx*sx);
+  const b=(sy-a*sx)/n;
+  return values.map((_,x)=>a*x+b);
+}
+
+let chart;
+function renderChart() {
+  const labels = data.map(e=>e.date);
+  const weightData = data.map(e=>e.weight);
+  const volumeData = data.map(e=>e.weight*e.reps*e.sets);
+  const maxData = data.map(e=>e.max);
+
+  chart?.destroy();
+  chart = new Chart(chartCanvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label:"重量", data: weightData, borderColor:"blue" },
+        { label:"重量トレンド", data: trend(weightData), borderDash:[5,5], borderColor:"blue" },
+        { label:"ボリューム", data: volumeData, borderColor:"green" },
+        { label:"ボリュームトレンド", data: trend(volumeData), borderDash:[5,5], borderColor:"green" },
+        { label:"MAX", data: maxData, borderColor:"red" },
+        { label:"MAXトレンド", data: trend(maxData), borderDash:[5,5], borderColor:"red" }
+      ]
+    }
+  });
+}
+
+function copyCSV() {
+  const csv = "date,weight,reps,sets,max\n" +
+    data.map(e=>`${e.date},${e.weight},${e.reps},${e.sets},${e.max}`).join("\n");
+  navigator.clipboard.writeText(csv);
+  alert("CSVコピーしました");
+}
+
+function importCSV() {
+  const rows = csvInput.value.trim().split("\n").slice(1);
+  data = rows.map(r=>{
+    const [date,weight,reps,sets,max] = r.split(",");
+    return {date,weight:+weight,reps:+reps,sets:+sets,max:+max};
+  });
+  localStorage.setItem("training_data", JSON.stringify(data));
+  renderAll();
+}
+
+renderAll();
+</script>
 
 </body>
 </html>
