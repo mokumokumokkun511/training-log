@@ -44,6 +44,7 @@ h2 {
   margin-bottom: 8px;
 }
 
+/* 共通入力 */
 input, select, textarea, button {
   width: 100%;
   padding: 10px;
@@ -52,6 +53,20 @@ input, select, textarea, button {
   border: 1px solid #ccc;
   font-size: 16px;
   box-sizing: border-box;
+}
+
+/* ★ dateだけはSafari対策で再指定 */
+input[type="date"] {
+  width: 100%;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: #fff;
+}
+
+/* Safari内部UI対策 */
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
 }
 
 button {
@@ -139,14 +154,12 @@ const BACKUP_KEY = "training_backup";
 let data = JSON.parse(localStorage.getItem(DATA_KEY)) || [];
 let chart;
 
-// Elements
 const dateEl = document.getElementById("date");
 const weightEl = document.getElementById("weight");
 const repsEl = document.getElementById("reps");
 const setsEl = document.getElementById("sets");
 const maxEl = document.getElementById("max");
 
-// Enterキー移動
 [weightEl, repsEl, setsEl, maxEl].forEach((el, i, arr) => {
   el.addEventListener("keydown", e => {
     if (e.key === "Enter") {
@@ -162,7 +175,6 @@ document.getElementById("restoreBtn").onclick = restoreBackup;
 document.getElementById("exportBtn").onclick = exportCSV;
 document.getElementById("importBtn").onclick = importCSV;
 
-// 保存
 function saveData() {
   const date = dateEl.value || new Date().toISOString().slice(0,10);
   const w = +weightEl.value;
@@ -177,38 +189,22 @@ function saveData() {
   localStorage.setItem(DATA_KEY, JSON.stringify(data));
   localStorage.setItem(BACKUP_KEY, JSON.stringify(data));
 
-  clearInputs();
+  weightEl.value = repsEl.value = setsEl.value = maxEl.value = "";
+  weightEl.focus();
   refresh();
 }
 
-function clearInputs() {
-  weightEl.value = repsEl.value = setsEl.value = maxEl.value = "";
-  weightEl.focus();
-}
-
-// ★ 日付指定削除（完成版）
 function deleteByDate() {
   const sel = document.getElementById("deleteDate");
   const d = sel.value;
   if (!d) return;
-
   if (!confirm(`${d} のデータをすべて削除しますか？`)) return;
 
   data = data.filter(x => x.date !== d);
   localStorage.setItem(DATA_KEY, JSON.stringify(data));
-
   refresh();
-
-  // データ0件時の安全処理
-  if (data.length === 0) {
-    document.getElementById("weekly").textContent = "";
-    document.getElementById("monthly").textContent = "";
-    document.getElementById("growth").textContent = "";
-    if (chart) chart.destroy();
-  }
 }
 
-// 復元
 function restoreBackup() {
   const backup = JSON.parse(localStorage.getItem(BACKUP_KEY));
   if (!backup) return alert("バックアップなし");
@@ -217,7 +213,6 @@ function restoreBackup() {
   refresh();
 }
 
-// CSV出力
 function exportCSV() {
   let csv = "date,weight,reps,sets,max,volume\n";
   data.forEach(d => {
@@ -227,7 +222,6 @@ function exportCSV() {
   alert("CSVをコピーしました");
 }
 
-// CSV入力
 function importCSV() {
   const text = document.getElementById("importArea").value.trim();
   if (!text) return;
@@ -240,7 +234,6 @@ function importCSV() {
   refresh();
 }
 
-// 線形回帰
 function trend(values) {
   const n = values.length;
   if (n < 2) return [];
@@ -262,15 +255,11 @@ function refresh() {
 function updateDeleteList() {
   const sel = document.getElementById("deleteDate");
   sel.innerHTML = "";
-  if (data.length === 0) return;
-
-  [...new Set(data.map(d=>d.date))]
-    .sort()
-    .forEach(d=>{
-      const o=document.createElement("option");
-      o.value=o.textContent=d;
-      sel.appendChild(o);
-    });
+  [...new Set(data.map(d=>d.date))].sort().forEach(d=>{
+    const o=document.createElement("option");
+    o.value=o.textContent=d;
+    sel.appendChild(o);
+  });
 }
 
 function updateSummary() {
@@ -293,7 +282,6 @@ function updateSummary() {
   }
 }
 
-// グラフ
 function drawChart() {
   if (chart) chart.destroy();
   if (data.length === 0) return;
