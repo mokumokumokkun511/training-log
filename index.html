@@ -1,103 +1,135 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Training Log</title>
 
-<!-- Chart.js（必須） -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
+* { box-sizing: border-box; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   margin: 0;
   padding: 12px;
-  background: #f5f5f5;
+  background: #f2f2f7;
 }
-h2 { margin-top: 24px; }
+
+h1, h2 {
+  margin: 12px 0 6px;
+}
+
+.container {
+  max-width: 480px;
+  margin: 0 auto;
+}
 
 input, button {
   width: 100%;
-  padding: 8px;
+  padding: 10px;
   margin: 4px 0;
   font-size: 16px;
+  border-radius: 8px;
+}
+
+input {
+  border: 1px solid #ccc;
+  background: #fff;
 }
 
 button {
+  border: none;
   background: #007aff;
   color: #fff;
-  border: none;
-  border-radius: 6px;
+  font-weight: 600;
 }
 
 canvas {
   background: #fff;
-  margin-top: 16px;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.summary {
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+small {
+  color: #666;
 }
 </style>
 </head>
 
 <body>
+<div class="container">
 
 <h1>🏋️ トレーニング記録</h1>
 
-<label>日付</label>
 <input type="date" id="date">
 
-<label>重量</label>
-<input type="number" id="weight">
+<input type="number" id="weight" placeholder="重量"
+  onkeydown="moveNext(event,'reps')">
 
-<label>回数</label>
-<input type="number" id="reps">
+<input type="number" id="reps" placeholder="回数"
+  onkeydown="moveNext(event,'sets')">
 
-<label>セット</label>
-<input type="number" id="sets">
+<input type="number" id="sets" placeholder="セット"
+  onkeydown="moveNext(event,'max')">
 
-<label>マックス</label>
-<input type="number" id="max">
+<input type="number" id="max" placeholder="マックス"
+  onkeydown="moveNext(event,'addBtn')">
 
-<button onclick="addData()">追加</button>
+<button id="addBtn" onclick="addData()">追加</button>
 
-<label>日付削除</label>
-<input type="date" id="deleteDate">
-<button onclick="deleteByDate()">削除</button>
+<h2>📊 推移グラフ</h2>
+<canvas id="chart"></canvas>
 
-<h2>重量</h2>
-<canvas id="weightChart"></canvas>
+<div class="summary" id="weekSummary"></div>
+<div class="summary" id="monthSummary"></div>
 
-<h2>ボリューム</h2>
-<canvas id="volumeChart"></canvas>
+<button onclick="exportCSV()">CSV書き出し（Excel用）</button>
+<input type="file" accept=".csv" onchange="importCSV(this.files[0])">
 
-<h2>マックス</h2>
-<canvas id="maxChart"></canvas>
+<small>
+保存先：この端末のブラウザ（localStorage）<br>
+※ Safariのデータ削除で消えます
+</small>
+
+</div>
 
 <script>
 let data = JSON.parse(localStorage.getItem("trainingData") || "[]");
+let chart;
 
 function save() {
   localStorage.setItem("trainingData", JSON.stringify(data));
 }
 
-function addData() {
-  const d = date.value;
-  if (!d) return alert("日付入れて！");
+function moveNext(e, id) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById(id).focus();
+  }
+}
 
+function addData() {
+  if (!date.value) {
+    alert("日付を入力してください");
+    return;
+  }
   data.push({
-    date: d,
+    date: date.value,
     weight: +weight.value,
     reps: +reps.value,
     sets: +sets.value,
     max: +max.value
   });
-
-  save();
-  drawAll();
-}
-
-function deleteByDate() {
-  const d = deleteDate.value;
-  data = data.filter(x => x.date !== d);
   save();
   drawAll();
 }
@@ -106,63 +138,109 @@ function trend(values) {
   const n = values.length;
   if (n < 2) return values;
 
-  const x = [...Array(n).keys()];
-  const avgX = x.reduce((a,b)=>a+b,0)/n;
-  const avgY = values.reduce((a,b)=>a+b,0)/n;
+  const x = values.map((_, i) => i);
+  const mx = x.reduce((a,b)=>a+b,0)/n;
+  const my = values.reduce((a,b)=>a+b,0)/n;
 
-  const slope = x.reduce((s,i)=>s+(i-avgX)*(values[i]-avgY),0) /
-                x.reduce((s,i)=>s+(i-avgX)**2,0);
+  const a = x.reduce((s,i)=>s+(i-mx)*(values[i]-my),0) /
+            x.reduce((s,i)=>s+(i-mx)*(i-mx),0);
+  const b = my - a*mx;
 
-  return x.map(i => avgY + slope*(i-avgX));
-}
-
-let charts = {};
-
-function drawChart(id, label, values) {
-  if (charts[id]) charts[id].destroy();
-
-  charts[id] = new Chart(
-    document.getElementById(id),
-    {
-      type: "line",
-      data: {
-        labels: data.map(d => d.date),
-        datasets: [
-          {
-            label,
-            data: values,
-            borderWidth: 2
-          },
-          {
-            label: "近似曲線",
-            data: trend(values),
-            borderDash: [5,5],
-            borderWidth: 2
-          }
-        ]
-      }
-    }
-  );
+  return x.map(i => a*i + b);
 }
 
 function drawAll() {
-  drawChart(
-    "weightChart",
-    "重量",
-    data.map(d => d.weight)
-  );
+  const labels = data.map(d => d.date);
+  const weights = data.map(d => d.weight);
+  const volumes = data.map(d => d.weight*d.reps*d.sets);
+  const maxes = data.map(d => d.max);
 
-  drawChart(
-    "volumeChart",
-    "ボリューム",
-    data.map(d => d.weight * d.reps * d.sets)
-  );
+  if (chart) chart.destroy();
 
-  drawChart(
-    "maxChart",
-    "マックス",
-    data.map(d => d.max)
-  );
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label:"重量", data:weights, borderWidth:2 },
+        { label:"重量トレンド", data:trend(weights), borderDash:[5,5], pointRadius:0 },
+
+        { label:"ボリューム", data:volumes, borderWidth:2 },
+        { label:"ボリュームトレンド", data:trend(volumes), borderDash:[5,5], pointRadius:0 },
+
+        { label:"マックス", data:maxes, borderWidth:2 },
+        { label:"マックストレンド", data:trend(maxes), borderDash:[5,5], pointRadius:0 }
+      ]
+    }
+  });
+
+  updateSummary();
+}
+
+function updateSummary() {
+  if (data.length === 0) return;
+
+  const now = new Date();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(now.getDate()-7);
+
+  const month = now.toISOString().slice(0,7);
+
+  const week = data.filter(d => new Date(d.date) >= weekAgo);
+  const monthData = data.filter(d => d.date.startsWith(month));
+
+  function avg(arr, key) {
+    if (arr.length === 0) return 0;
+    return (arr.reduce((s,d)=>s+d[key],0)/arr.length).toFixed(1);
+  }
+
+  weekSummary.innerHTML = `
+<b>📅 週サマリー</b><br>
+平均重量: ${avg(week,'weight')}<br>
+平均マックス: ${avg(week,'max')}
+`;
+
+  monthSummary.innerHTML = `
+<b>📆 月サマリー</b><br>
+平均重量: ${avg(monthData,'weight')}<br>
+平均マックス: ${avg(monthData,'max')}
+`;
+}
+
+function exportCSV() {
+  let csv = "date,weight,reps,sets,max\n";
+  data.forEach(d=>{
+    csv += `${d.date},${d.weight},${d.reps},${d.sets},${d.max}\n`;
+  });
+
+  const blob = new Blob([csv], { type:"text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "training-log.csv";
+  a.click();
+}
+
+function importCSV(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split("\n").slice(1);
+    data = [];
+    lines.forEach(l=>{
+      if(!l.trim()) return;
+      const [date,w,r,s,m] = l.split(",");
+      data.push({
+        date,
+        weight:+w,
+        reps:+r,
+        sets:+s,
+        max:+m
+      });
+    });
+    save();
+    drawAll();
+  };
+  reader.readAsText(file);
 }
 
 drawAll();
